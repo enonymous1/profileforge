@@ -67,11 +67,27 @@ sections.
 
 ## Scheduled refresh
 
-`.github/workflows/refresh-profile.yml` runs `sync-activity` and
-`sync-stats` daily against your `<user>/<user>` profile repo and commits the
-result. It needs a `PROFILE_PAT` secret (a personal access token with `repo`
-scope), because `GITHUB_TOKEN` cannot push to a different repository — see
-the workflow's comments for setup details.
+`.github/workflows/refresh-profile.yml` runs `sync-activity` daily against
+your `<user>/<user>` profile repo and commits the result. It needs a
+`PROFILE_PAT` secret, because `GITHUB_TOKEN` cannot push to a different
+repository.
+
+Setup:
+
+1. Create a personal access token (classic) with the `repo` scope:
+   GitHub → Settings → Developer settings → Personal access tokens →
+   Tokens (classic) → Generate new token (classic). Copy the token — it
+   shows only once.
+2. In this repo: Settings → Secrets and variables → Actions → New
+   repository secret, name `PROFILE_PAT`, paste the token.
+3. Prove it once by hand: Actions → Refresh profile → Run workflow. A
+   green run should produce a `chore: refresh profile data [skip ci]`
+   commit in your profile repo. After that the daily 04:17 UTC schedule
+   runs itself.
+
+Note: the workflow syncs the activity feed only. The stats section is
+hand-maintained in the profile README, so `sync-stats` is intentionally
+not run here.
 
 ## Development
 
