@@ -1,0 +1,63 @@
+name: Refresh profile
+
+# Keeps the GitHub profile README fresh: syncs the activity feed and the
+# stats section (sparkline + top languages), then commits if anything changed.
+#
+# Setup:
+#   1. Create a personal access token with the `repo` scope and store it as
+#      the PROFILE_PAT secret (GITHUB_TOKEN cannot push to a *different*
+#      repository, and your profile lives in <user>/<user>).
+#      Alternative: copy this workflow into your <user>/<user> repo and drop
+#      the second checkout + PROFILE_PAT, using GITHUB_TOKEN instead.
+#   2. Make sure your profile README contains the marker sections:
+#      <!--START_SECTION:activity--> ... <!--END_SECTION:activity-->
+#      <!--START_SECTION:stats--> ... <!--END_SECTION:stats-->
+#      (Generate a starter with `profileforge render-readme`.)
+
+on:
+  schedule:
+    # Daily at 04:17 UTC — quiet hours for the API and for your profile.
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out profileforge
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install profileforge
+        run: pip install .
+
+      - name: Check out profile repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ github.repository_owner }}
+          path: profile
+          token: ${{ secrets.PROFILE_PAT }}
+
+      - name: Sync activity and stats
+        env:
+          GH_USERNAME: ${{ github.repository_owner }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          profileforge sync-activity --target profile/README.md
+          profileforge sync-stats --target profile/README.md
+
+      - name: Commit and push if changed
+        working-directory: profile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --cached --quiet || git commit -m "chore: refresh profile data [skip ci]"
+          git push

@@ -1,0 +1,1 @@
+"""README marker-section updater."""

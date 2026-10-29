@@ -1,0 +1,48 @@
+{% extends "base.html.j2" %}
+{% block content %}
+<header class="hero">
+  {% if user.avatar_url %}<img class="avatar" src="{{ user.avatar_url }}" alt="{{ user.login }}" width="120" height="120">{% endif %}
+  <h1>{{ user.name }}</h1>
+  {% if user.bio %}<p class="bio">{{ user.bio }}</p>{% endif %}
+  <p class="badges">
+    <img src="badges/stars.svg" alt="Total stars" height="20">
+    <img src="badges/repos.svg" alt="Public repositories" height="20">
+    <img src="badges/followers.svg" alt="Followers" height="20">
+  </p>
+  <p><a class="btn" href="{{ user.html_url }}">@{{ user.login }} on GitHub</a></p>
+</header>
+
+<section>
+  <h2>Projects</h2>
+  <div class="projects">
+  {% for project in projects %}
+    <article class="card">
+      <h3><a href="{{ project.html_url }}">{{ project.name }}</a></h3>
+      {% if project.description %}<p>{{ project.description }}</p>{% endif %}
+      <p class="meta">
+        {% if project.language %}<span class="lang"><span class="dot" style="background:{{ project.language_color }}"></span>{{ project.language }}</span>{% endif %}
+        <span title="Stars">⭐ {{ project.stargazers_count }}</span>
+        <span title="Forks">🍴 {{ project.forks_count }}</span>
+      </p>
+      {% if project.topics %}<p class="topics">{% for topic in project.topics %}<span class="topic">{{ topic }}</span>{% endfor %}</p>{% endif %}
+    </article>
+  {% endfor %}
+  </div>
+</section>
+
+<section>
+  <h2>Recent activity</h2>
+  <ul class="activity">
+  {% for item in activity_html %}
+    <li>{{ item | safe }}</li>
+  {% endfor %}
+  </ul>
+  <div class="sparkline">{{ sparkline_svg | safe }}</div>
+  <p class="muted">Activity over the last {{ sparkline_days }} days</p>
+</section>
+
+<section>
+  <h2>Top languages</h2>
+  {{ top_languages_html | safe }}
+</section>
+{% endblock %}
