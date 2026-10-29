@@ -1,7 +1,7 @@
 name: Refresh profile
 
-# Keeps the GitHub profile README fresh: syncs the activity feed and the
-# stats section (sparkline + top languages), then commits if anything changed.
+# Keeps the GitHub profile README fresh: syncs the activity feed, then
+# commits if anything changed.
 #
 # Setup:
 #   1. Create a personal access token with the `repo` scope and store it as
@@ -9,10 +9,13 @@ name: Refresh profile
 #      repository, and your profile lives in <user>/<user>).
 #      Alternative: copy this workflow into your <user>/<user> repo and drop
 #      the second checkout + PROFILE_PAT, using GITHUB_TOKEN instead.
-#   2. Make sure your profile README contains the marker sections:
+#   2. Make sure your profile README contains the activity marker section:
 #      <!--START_SECTION:activity--> ... <!--END_SECTION:activity-->
-#      <!--START_SECTION:stats--> ... <!--END_SECTION:stats-->
 #      (Generate a starter with `profileforge render-readme`.)
+#
+# Note: sync-stats is intentionally NOT run here. The profile README's stats
+# section is hand-maintained (own-design markup the generator would replace),
+# so only the activity feed is automated.
 
 on:
   schedule:
@@ -45,13 +48,13 @@ jobs:
           path: profile
           token: ${{ secrets.PROFILE_PAT }}
 
-      - name: Sync activity and stats
+      # Stats are hand-maintained in the profile README; do not add a
+      # sync-stats step here (it would replace the stats section wholesale).
+      - name: Sync activity
         env:
           GH_USERNAME: ${{ github.repository_owner }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          profileforge sync-activity --target profile/README.md
-          profileforge sync-stats --target profile/README.md
+        run: profileforge sync-activity --target profile/README.md
 
       - name: Commit and push if changed
         working-directory: profile
