@@ -377,6 +377,39 @@ def test_fetch_user_unexpected_body() -> None:
             client.fetch_user("octocat")
 
 
+def test_fetch_repo_languages() -> None:
+    api = _MockAPI([_json_response(200, {"Python": 1200, "Go": 300})])
+    with api.client() as client:
+        languages = client.fetch_repo_languages("octocat", "hello-world")
+    assert languages == {"Python": 1200, "Go": 300}
+    assert api.requests[0].url.path == "/repos/octocat/hello-world/languages"
+
+
+def test_fetch_repo_languages_drops_non_positive_values() -> None:
+    api = _MockAPI(
+        [_json_response(200, {"Python": 100, "Empty": 0, "Weird": -5, "Text": "12", "Flag": True})]
+    )
+    with api.client() as client:
+        languages = client.fetch_repo_languages("octocat", "hello-world")
+    assert languages == {"Python": 100}
+
+
+def test_fetch_repo_languages_not_found() -> None:
+    api = _MockAPI([_json_response(404, {"message": "Not Found"})])
+    with api.client() as client:
+        with pytest.raises(GitHubNotFoundError):
+            client.fetch_repo_languages("octocat", "missing")
+
+
+def test_fetch_repo_languages_blank_args_rejected() -> None:
+    api = _MockAPI([_json_response(200, {})])
+    with api.client() as client:
+        with pytest.raises(ValueError, match="owner"):
+            client.fetch_repo_languages("", "hello-world")
+        with pytest.raises(ValueError, match="repo"):
+            client.fetch_repo_languages("octocat", "  ")
+
+
 def test_fetch_repos() -> None:
     api = _MockAPI(
         [_json_response(200, [{"name": "a", "stargazers_count": 3, "language": "Python"}])]

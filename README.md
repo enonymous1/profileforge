@@ -59,18 +59,21 @@ dark/light-aware portfolio page with project cards, plus `profile.json` and
 locally generated SVG badges (`dist/badges/*.svg`) you can embed anywhere.
 
 `sync-stats` refreshes the `<!--START_SECTION:stats-->` marker with a
-locally generated activity sparkline (SVG, no third-party image service) and
-top-language bars. `render-readme` renders the Jinja2 template
+plain-text activity sparkline and top-language bars by share of code bytes
+(fenced code blocks — GitHub strips inline SVG and styled HTML from
+READMEs). It needs `GITHUB_TOKEN`: one language request per repo exhausts
+the unauthenticated rate limit. `render-readme` renders the Jinja2 template
 (`src/profileforge/profile/templates/readme.md.j2`) with live GitHub data —
 handy for bootstrapping a profile README that already contains both marker
 sections.
 
 ## Scheduled refresh
 
-`.github/workflows/refresh-profile.yml` runs `sync-activity` daily against
-your `<user>/<user>` profile repo and commits the result. It needs a
-`PROFILE_PAT` secret, because `GITHUB_TOKEN` cannot push to a different
-repository.
+`.github/workflows/refresh-profile.yml` runs `sync-activity` and
+`sync-stats` daily against your `<user>/<user>` profile repo and commits
+the result. It needs a `PROFILE_PAT` secret, because `GITHUB_TOKEN`
+cannot push to a different repository. (`GITHUB_TOKEN` itself is passed
+to both sync steps: `sync-stats` fetches language data for every repo.)
 
 Setup:
 
@@ -84,10 +87,6 @@ Setup:
    green run should produce a `chore: refresh profile data [skip ci]`
    commit in your profile repo. After that the daily 04:17 UTC schedule
    runs itself.
-
-Note: the workflow syncs the activity feed only. The stats section is
-hand-maintained in the profile README, so `sync-stats` is intentionally
-not run here.
 
 ## Development
 

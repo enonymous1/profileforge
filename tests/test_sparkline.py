@@ -10,6 +10,7 @@ from profileforge.github.models import GitHubEvent, PushPayload
 from profileforge.profile.sparkline import (
     build_daily_counts,
     render_sparkline_svg,
+    render_sparkline_text,
     sparkline_start,
 )
 
@@ -83,3 +84,29 @@ def test_render_sparkline_svg_all_zero() -> None:
     svg = render_sparkline_svg([0, 0], date(2026, 10, 6))
     assert svg.count("<rect") == 2
     assert "#39d353" not in svg
+
+
+def test_render_sparkline_text() -> None:
+    text = render_sparkline_text([0, 2, 4], date(2026, 10, 5))
+    assert text == "▁▅█\nOct 05 - Oct 07, 2026 · 6 public events · busiest day Oct 07 (4)"
+
+
+def test_render_sparkline_text_all_zero() -> None:
+    text = render_sparkline_text([0, 0, 0], date(2026, 10, 5))
+    assert text == "▁▁▁\nOct 05 - Oct 07, 2026 · 0 public events"
+
+
+def test_render_sparkline_text_empty() -> None:
+    assert (
+        render_sparkline_text([], date(2026, 10, 7)) == "\nOct 07 - Oct 07, 2026 · 0 public events"
+    )
+
+
+def test_render_sparkline_text_busiest_day_earliest_on_tie() -> None:
+    text = render_sparkline_text([3, 3, 1], date(2026, 10, 5))
+    assert text.endswith("busiest day Oct 05 (3)")
+
+
+def test_render_sparkline_text_singular_event() -> None:
+    text = render_sparkline_text([0, 1], date(2026, 10, 6))
+    assert "1 public event ·" in text

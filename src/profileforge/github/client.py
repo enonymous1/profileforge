@@ -362,6 +362,27 @@ class GitHubClient:
         logger.info("Fetched %d repos for %s", len(repos), username)
         return repos
 
+    def fetch_repo_languages(self, owner: str, repo: str) -> dict[str, int]:
+        """Fetch one repo's language byte counts (``{language: bytes}``).
+
+        Non-positive and non-integer values are dropped defensively: a
+        language with no bytes must not count the repo toward that language.
+        """
+        if not owner or not owner.strip():
+            raise ValueError("owner must be a non-empty string")
+        if not repo or not repo.strip():
+            raise ValueError("repo must be a non-empty string")
+        response = self._request("GET", f"/repos/{owner}/{repo}/languages")
+        _raise_for_status(response)
+        body = _parse_json_object(response)
+        languages = {
+            name: value
+            for name, value in body.items()
+            if isinstance(value, int) and not isinstance(value, bool) and value > 0
+        }
+        logger.debug("Fetched %d languages for %s/%s", len(languages), owner, repo)
+        return languages
+
     def _request(
         self,
         method: str,

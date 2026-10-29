@@ -104,6 +104,19 @@ def fetch_repo_summaries(client: GitHubClient, username: str) -> list[RepoSummar
     return [parse_repo_summary(raw) for raw in client.fetch_repos(username)]
 
 
+def fetch_code_share(
+    client: GitHubClient, username: str, repos: Sequence[RepoSummary]
+) -> CodeShare:
+    """Aggregate language bytes across a user's non-fork repos.
+
+    Takes already-fetched repo summaries so callers fetch the repo list
+    once; forks are excluded from the count and reported separately.
+    """
+    counted = [repo for repo in repos if not repo.fork]
+    per_repo = [client.fetch_repo_languages(username, repo.name) for repo in counted]
+    return summarize_code_share(per_repo, excluded_forks=len(repos) - len(counted))
+
+
 def total_stars(repos: Sequence[RepoSummary]) -> int:
     """Sum stargazers across repos (including forks, like GitHub's own total)."""
     return sum(repo.stargazers_count for repo in repos)
@@ -133,3 +146,76 @@ def summarize_languages(repos: Sequence[RepoSummary], *, limit: int = 8) -> list
     ]
     stats.sort(key=lambda stat: (-stat.repos, -stat.stars, stat.name))
     return stats[:limit]
+
+
+@dataclass(frozen=True)
+class LanguageBytes:
+    """One language's share of code by bytes across the counted repos."""
+
+    name: str
+    bytes: int
+    repos: int  # repos containing code in this language
+    share: float  # percentage of total bytes
+
+
+@dataclass(frozen=True)
+class CodeShare:
+    """A user's code footprint: language bytes summed across repos."""
+
+    total_bytes: int
+    repo_count: int
+    excluded_forks: int
+    language_count: int  # distinct languages before top-N + Other collapsing
+    languages: tuple[LanguageBytes, ...]  # ranked by bytes, tail as "Other"
+
+
+def summarize_code_share(
+    languages_by_repo: Sequence[Mapping[str, int]],
+    *,
+    excluded_forks: int = 0,
+    limit: int = 10,
+) -> CodeShare:
+    """Aggregate per-repo language bytes into a code share.
+
+    Each mapping is one counted repo's ``{language: bytes}`` (as returned by
+    :meth:`GitHubClient.fetch_repo_languages`); the caller filters forks.
+    A repo counts toward a language when it holds more than zero bytes of
+    it, so repos routinely count toward several languages. Languages past
+    ``limit`` collapse into a single ``"Other"`` row; shares are percentages
+    of total bytes.
+    """
+    totals: dict[str, int] = {}
+    repo_counts: dict[str, int] = {}
+    for per_repo in languages_by_repo:
+        for name, value in per_repo.items():
+            if value <= 0:
+                continue
+            totals[name] = totals.get(name, 0) + value
+            repo_counts[name] = repo_counts.get(name, 0) + 1
+    total_bytes = sum(totals.values())
+    ranked = sorted(totals.items(), key=lambda item: (-item[1], item[0]))
+    head, tail = ranked[:limit], ranked[limit:]
+
+    def _stat(name: str, nbytes: int, repos: int) -> LanguageBytes:
+        return LanguageBytes(
+            name=name,
+            bytes=nbytes,
+            repos=repos,
+            share=100.0 * nbytes / total_bytes if total_bytes else 0.0,
+        )
+
+    languages = [_stat(name, nbytes, repo_counts[name]) for name, nbytes in head]
+    if tail:
+        tail_repos = {
+            index
+            for index, per_repo in enumerate(languages_by_repo)
+            if any(per_repo.get(name, 0) > 0 for name, _ in tail)
+        }
+        languages.append(_stat("Other", sum(nbytes for _, nbytes in tail), len(tail_repos)))
+    return CodeShare(
+        total_bytes=total_bytes,
+        repo_count=len(languages_by_repo),
+        excluded_forks=excluded_forks,
+        language_count=len(totals),
+        languages=tuple(languages),
+    )

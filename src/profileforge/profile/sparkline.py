@@ -1,4 +1,8 @@
-"""Locally generated activity sparkline (SVG, no third-party image service)."""
+"""Locally generated activity sparklines (no third-party image service).
+
+SVG bars for the portfolio site, plain-text block characters for READMEs,
+where GitHub strips inline SVG.
+"""
 
 from __future__ import annotations
 
@@ -87,3 +91,34 @@ def render_sparkline_svg(
         f'height="{_HEIGHT}" role="img" aria-label="{label}">'
         f"<title>{label}</title>{bars_svg}</svg>"
     )
+
+
+_TEXT_LEVELS = "▁▂▃▄▅▆▇█"
+
+
+def render_sparkline_text(counts: Sequence[int], start: date) -> str:
+    """Render daily counts as plain-text block characters plus a summary line.
+
+    The two returned lines are meant for a fenced code block in a README,
+    where GitHub strips the inline-SVG equivalent. Each character is one
+    day, oldest first, scaled against the busiest day; empty days are the
+    lowest block. The summary names the window, the total event count, and
+    the busiest day (earliest on ties); with no events at all the busiest
+    clause is omitted.
+    """
+    peak = max(counts) if counts else 0
+    if peak:
+        chars = "".join(
+            _TEXT_LEVELS[min(len(_TEXT_LEVELS) - 1, round(count / peak * 7))] for count in counts
+        )
+    else:
+        chars = _TEXT_LEVELS[0] * len(counts)
+    total = sum(counts)
+    end = start + timedelta(days=len(counts) - 1) if counts else start
+    window = f"{start:%b %d} - {end:%b %d, %Y}"
+    if not counts or total == 0:
+        return f"{chars}\n{window} · 0 public events"
+    busiest_index = counts.index(peak)
+    busiest = start + timedelta(days=busiest_index)
+    noun = "event" if total == 1 else "events"
+    return f"{chars}\n{window} · {total} public {noun} · busiest day {busiest:%b %d} ({peak})"

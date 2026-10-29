@@ -28,6 +28,7 @@ _README_TEMPLATE = (
 
 def _set_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("GH_USERNAME", "octocat")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
     monkeypatch.setenv("TARGET_FILE", str(tmp_path / "README.md"))
 
 
@@ -39,6 +40,7 @@ def _write_readme(path: Path) -> Path:
 def _fake_client_class(
     events: list[dict[str, Any]] | None = None,
     error: Exception | None = None,
+    languages: dict[str, dict[str, int]] | None = None,
 ) -> type:
     """Build a fake GitHubClient with canned events or a canned error."""
 
@@ -92,6 +94,11 @@ def _fake_client_class(
                     "archived": False,
                 }
             ]
+
+        def fetch_repo_languages(self, owner: str, repo: str) -> dict[str, int]:
+            if error is not None:
+                raise error
+            return (languages or {"a": {"Python": 1200}}).get(repo, {})
 
     return _FakeGitHubClient
 
@@ -236,9 +243,7 @@ def test_sync_stats_dry_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
     assert "Would update stats section" in result.output
 
 
-def test_sync_stats_writes_svg_and_languages(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_sync_stats_writes_plain_text_body(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _set_env(monkeypatch, tmp_path)
     readme = tmp_path / "README.md"
     readme.write_text(_STATS_README, encoding="utf-8")
@@ -246,10 +251,25 @@ def test_sync_stats_writes_svg_and_languages(
     result = runner.invoke(app, ["sync-stats", "--target", str(readme)])
     assert result.exit_code == 0, result.output
     content = readme.read_text(encoding="utf-8")
-    assert "<svg " in content
+    assert "<svg " not in content
+    assert "#### Top languages" in content
     assert "Python" in content
+    assert "1,200 bytes" in content
     assert "old stats" not in content
     assert "Updated stats section" in result.output
+
+
+def test_sync_stats_requires_token(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("GH_USERNAME", "octocat")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setenv("TARGET_FILE", str(tmp_path / "README.md"))
+    readme = tmp_path / "README.md"
+    readme.write_text(_STATS_README, encoding="utf-8")
+    monkeypatch.setattr(cli_module, "GitHubClient", _fake_client_class(events=RAW_ACTIVITY_FEED))
+    result = runner.invoke(app, ["sync-stats", "--target", str(readme)])
+    assert result.exit_code == 2
+    assert "GITHUB_TOKEN" in result.output
+    assert readme.read_text(encoding="utf-8") == _STATS_README
 
 
 def test_sync_stats_already_up_to_date(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -292,7 +312,8 @@ def test_render_readme_to_stdout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert "Test bio" in result.output
     assert "<!--START_SECTION:activity-->" in result.output
     assert "<!--START_SECTION:stats-->" in result.output
-    assert "<svg " in result.output
+    assert "#### Top languages" in result.output
+    assert "<svg " not in result.output
 
 
 def test_render_readme_to_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

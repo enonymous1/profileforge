@@ -1,7 +1,8 @@
 name: Refresh profile
 
-# Keeps the GitHub profile README fresh: syncs the activity feed, then
-# commits if anything changed.
+# Keeps the GitHub profile README fresh: syncs the activity feed and the
+# stats section (plain-text code share + sparkline), then commits if
+# anything changed.
 #
 # Setup:
 #   1. Create a personal access token with the `repo` scope and store it as
@@ -9,13 +10,15 @@ name: Refresh profile
 #      repository, and your profile lives in <user>/<user>).
 #      Alternative: copy this workflow into your <user>/<user> repo and drop
 #      the second checkout + PROFILE_PAT, using GITHUB_TOKEN instead.
-#   2. Make sure your profile README contains the activity marker section:
+#   2. Make sure your profile README contains both marker sections:
 #      <!--START_SECTION:activity--> ... <!--END_SECTION:activity-->
+#      <!--START_SECTION:stats--> ... <!--END_SECTION:stats-->
 #      (Generate a starter with `profileforge render-readme`.)
 #
-# Note: sync-stats is intentionally NOT run here. The profile README's stats
-# section is hand-maintained (own-design markup the generator would replace),
-# so only the activity feed is automated.
+# The stats section is fully generated: sync-stats renders the as-of
+# header, sparkline, and language bars from the GitHub API on every run.
+# Keep hand-written notes (methodology, links) OUTSIDE the stats markers
+# so the sync never overwrites them.
 
 on:
   schedule:
@@ -48,13 +51,17 @@ jobs:
           path: profile
           token: ${{ secrets.PROFILE_PAT }}
 
-      # Stats are hand-maintained in the profile README; do not add a
-      # sync-stats step here (it would replace the stats section wholesale).
       - name: Sync activity
         env:
           GH_USERNAME: ${{ github.repository_owner }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: profileforge sync-activity --target profile/README.md
+
+      - name: Sync stats
+        env:
+          GH_USERNAME: ${{ github.repository_owner }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: profileforge sync-stats --target profile/README.md
 
       - name: Commit and push if changed
         working-directory: profile

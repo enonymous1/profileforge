@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
@@ -19,10 +20,10 @@ from profileforge.logging_config import setup_logging
 from profileforge.profile.renderer import build_profile_context, render_readme, render_stats_body
 from profileforge.profile.sparkline import (
     build_daily_counts,
-    render_sparkline_svg,
+    render_sparkline_text,
     sparkline_start,
 )
-from profileforge.profile.stats import fetch_repo_summaries, summarize_languages
+from profileforge.profile.stats import fetch_code_share, fetch_repo_summaries
 from profileforge.readme.updater import MarkerNotFoundError, update_section
 from profileforge.site.builder import build_site
 from profileforge.site.data import assemble_site_data
@@ -46,6 +47,23 @@ def _load_settings() -> Settings:
     except (ValidationError, SettingsError) as exc:
         typer.echo(f"Configuration error:\n{exc}", err=True)
         raise typer.Exit(code=2) from exc
+
+
+def _require_token(settings: Settings, command: str) -> None:
+    """Fail fast when a command needs GITHUB_TOKEN and none is configured.
+
+    Per-repo language fetches cost one request per repo and exhaust the
+    unauthenticated rate limit almost immediately; waiting it out in the
+    retry loop would stall the run for minutes with no benefit.
+    """
+    if settings.github_token is None:
+        typer.echo(
+            f"error: {command} needs GITHUB_TOKEN: it fetches language data "
+            "for every repo, which exhausts the unauthenticated rate limit. "
+            "Set GITHUB_TOKEN in .env or the environment.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
 
 
 @app.command("version")
@@ -169,26 +187,31 @@ def sync_stats(
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without writing."),
 ) -> None:
-    """Refresh the README's stats section (sparkline + top languages)."""
+    """Refresh the README's stats section (plain-text code share + sparkline)."""
     settings = _load_settings()
     setup_logging(settings.log_level, json_output=settings.log_json)
     if sparkline_days < 1:
         typer.echo("error: --sparkline-days must be positive", err=True)
         raise typer.Exit(code=2)
+    _require_token(settings, "sync-stats")
     target_file = target if target is not None else settings.target_file
+    moment = datetime.now(UTC)
 
     try:
         with GitHubClient.from_settings(settings) as client:
             repos = fetch_repo_summaries(client, settings.gh_username)
+            share = fetch_code_share(client, settings.gh_username, repos)
             raw_events = client.fetch_public_events(settings.gh_username, per_page=100, max_pages=3)
     except GitHubAPIError as exc:
         logger.error("Failed to fetch GitHub data: %s", exc)
         raise typer.Exit(code=1) from exc
 
     events = [parse_event(raw) for raw in raw_events]
-    start = sparkline_start(sparkline_days)
-    svg = render_sparkline_svg(build_daily_counts(events, sparkline_days), start)
-    body = render_stats_body(summarize_languages(repos), svg, sparkline_days)
+    start = sparkline_start(sparkline_days, now=moment)
+    sparkline_text = render_sparkline_text(
+        build_daily_counts(events, sparkline_days, now=moment), start
+    )
+    body = render_stats_body(share, sparkline_text, moment.strftime("%b %d, %Y"))
 
     try:
         result = update_section(
@@ -227,6 +250,7 @@ def render_readme_cmd(
     if sparkline_days < 1:
         typer.echo("error: --sparkline-days must be positive", err=True)
         raise typer.Exit(code=2)
+    _require_token(settings, "render-readme")
 
     try:
         with GitHubClient.from_settings(settings) as client:

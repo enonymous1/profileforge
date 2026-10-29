@@ -5,11 +5,13 @@ from __future__ import annotations
 import pytest
 
 from profileforge.profile.stats import (
+    CodeShare,
     LanguageStat,
     RepoSummary,
     UserSummary,
     parse_repo_summary,
     parse_user_summary,
+    summarize_code_share,
     summarize_languages,
     total_stars,
 )
@@ -105,3 +107,57 @@ def test_total_stars() -> None:
     repos = [_repo("a", "Python", 10), _repo("b", "Rust", 5)]
     assert total_stars(repos) == 15
     assert total_stars([]) == 0
+
+
+def test_summarize_code_share() -> None:
+    share = summarize_code_share(
+        [
+            {"Python": 800, "Go": 100},
+            {"Python": 200},
+            {"Go": 100, "Rust": 50},
+        ],
+        excluded_forks=1,
+    )
+    assert isinstance(share, CodeShare)
+    assert share.total_bytes == 1250
+    assert share.repo_count == 3
+    assert share.excluded_forks == 1
+    assert share.language_count == 3
+    assert [(lang.name, lang.bytes, lang.repos) for lang in share.languages] == [
+        ("Python", 1000, 2),
+        ("Go", 200, 2),
+        ("Rust", 50, 1),
+    ]
+    assert share.languages[0].share == pytest.approx(80.0)
+    assert share.languages[2].share == pytest.approx(4.0)
+
+
+def test_summarize_code_share_collapses_tail_into_other() -> None:
+    per_repo = [{f"Lang{i}": 100 - i} for i in range(12)]
+    share = summarize_code_share(per_repo, limit=10)
+    assert [lang.name for lang in share.languages] == [f"Lang{i}" for i in range(10)] + ["Other"]
+    other = share.languages[-1]
+    assert other.bytes == 100 - 10 + 100 - 11
+    assert other.repos == 2
+    assert other.share == pytest.approx(100.0 * other.bytes / share.total_bytes)
+    assert share.language_count == 12
+
+
+def test_summarize_code_share_ties_break_alphabetically() -> None:
+    share = summarize_code_share([{"Zeta": 100, "Alpha": 100}])
+    assert [lang.name for lang in share.languages] == ["Alpha", "Zeta"]
+
+
+def test_summarize_code_share_ignores_non_positive_bytes() -> None:
+    share = summarize_code_share([{"Python": 100, "Empty": 0, "Neg": -5}])
+    assert [lang.name for lang in share.languages] == ["Python"]
+    assert share.total_bytes == 100
+    assert share.language_count == 1
+
+
+def test_summarize_code_share_empty() -> None:
+    share = summarize_code_share([])
+    assert share.total_bytes == 0
+    assert share.repo_count == 0
+    assert share.language_count == 0
+    assert share.languages == ()
