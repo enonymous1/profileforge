@@ -5,6 +5,9 @@ from __future__ import annotations
 import importlib.resources
 import json
 import logging
+import os
+import shutil
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -40,8 +43,21 @@ def _static_bytes(name: str) -> bytes:
     return (importlib.resources.files("profileforge.site") / "static" / name).read_bytes()
 
 
+def _remove_path(path: Path) -> None:
+    """Remove a file, symlink, or directory tree."""
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
 def build_site(data: SiteData, output_dir: str | Path) -> BuildResult:
     """Render the portfolio page, profile.json, CSS, and badges.
+
+    The site is built in a temp directory next to the output dir and
+    swapped into place, so a failed build never leaves a half-new site
+    behind (unlike the README updater's atomic write, the previous
+    version wrote each file in place).
 
     Args:
         data: Assembled site model.
@@ -51,8 +67,8 @@ def build_site(data: SiteData, output_dir: str | Path) -> BuildResult:
         BuildResult with the output dir and relative file paths written.
     """
     out = Path(output_dir)
-    badges_dir = out / "badges"
-    badges_dir.mkdir(parents=True, exist_ok=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{out.name}.tmp-", dir=str(out.parent)))
 
     context = {
         "user": data.user,
@@ -69,7 +85,7 @@ def build_site(data: SiteData, output_dir: str | Path) -> BuildResult:
     written: list[str] = []
 
     def _write(relative: str, content: str | bytes) -> None:
-        path = out / relative
+        path = staging / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         if isinstance(content, bytes):
             path.write_bytes(content)
@@ -77,17 +93,40 @@ def build_site(data: SiteData, output_dir: str | Path) -> BuildResult:
             path.write_text(content, encoding="utf-8")
         written.append(relative)
 
-    _write("index.html", _SITE_ENV.get_template("index.html.j2").render(context))
-    _write("profile.json", json.dumps(site_data_to_dict(data), indent=2) + "\n")
-    _write("styles.css", _static_bytes("styles.css"))
+    try:
+        _write("index.html", _SITE_ENV.get_template("index.html.j2").render(context))
+        _write("profile.json", json.dumps(site_data_to_dict(data), indent=2) + "\n")
+        _write("styles.css", _static_bytes("styles.css"))
 
-    badge_specs = (
-        ("stars", "stars", format_compact(data.total_stars), "#dfb317"),
-        ("repos", "repos", str(data.user.public_repos), "#0969da"),
-        ("followers", "followers", format_compact(data.user.followers), "#8250df"),
-    )
-    for name, label, value, color in badge_specs:
-        _write(f"badges/{name}.svg", render_badge(label, value, color=color))
+        badge_specs = (
+            ("stars", "stars", format_compact(data.total_stars), "#dfb317"),
+            ("repos", "repos", str(data.user.public_repos), "#0969da"),
+            ("followers", "followers", format_compact(data.user.followers), "#8250df"),
+        )
+        for name, label, value, color in badge_specs:
+            _write(f"badges/{name}.svg", render_badge(label, value, color=color))
+    except Exception:
+        # A failed build must not leave staging debris behind.
+        _remove_path(staging)
+        raise
+
+    backup = out.parent / f".{out.name}.backup"
+    if backup.exists() or backup.is_symlink():
+        _remove_path(backup)  # stale backup from an interrupted earlier run
+    swapped = False
+    try:
+        if out.exists() or out.is_symlink():
+            os.rename(out, backup)
+        os.rename(staging, out)
+        swapped = True
+    finally:
+        if swapped:
+            if backup.exists() or backup.is_symlink():
+                _remove_path(backup)
+        elif backup.exists() or backup.is_symlink():
+            # Swap failed midway; restore the previous site.
+            if not out.exists() and not out.is_symlink():
+                os.rename(backup, out)
 
     logger.info("Built site in %s (%d files)", out, len(written))
     return BuildResult(output_dir=out, files=tuple(written))

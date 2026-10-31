@@ -1,15 +1,7 @@
-"""Shared pytest fixtures."""
+"""Shared pytest fixtures.
 
-from __future__ import annotations
-
-import pytest
-
-from profileforge.config import get_settings
-
-
-@pytest.fixture(autouse=True)
-def _clear_settings_cache() -> object:
-    """Keep the cached settings from leaking between tests."""
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
+Note: this file used to carry an autouse fixture clearing the
+``get_settings`` cache between tests. The cache was removed (settings
+construction is cheap; a cache silently ignored later env changes), so the
+fixture went with it — do not re-add it without re-adding the cache.
+"""

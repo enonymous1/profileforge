@@ -345,7 +345,13 @@ class GitHubClient:
     def fetch_repos(
         self, username: str, *, per_page: int = 100, repo_type: str = "owner"
     ) -> list[dict[str, Any]]:
-        """Fetch a user's repos, most recently updated first (single page)."""
+        """Fetch a user's repos, most recently updated first (all pages).
+
+        Walks pages until a short page arrives. The previous single-page
+        version silently truncated any user with more than ``per_page``
+        repos, which made every downstream count (stars, projects, code
+        share) wrong.
+        """
         if not username or not username.strip():
             raise ValueError("username must be a non-empty string")
         if not 1 <= per_page <= 100:
@@ -356,9 +362,18 @@ class GitHubClient:
             "sort": "updated",
             "direction": "desc",
         }
-        response = self._request("GET", f"/users/{username}/repos", params=params)
-        _raise_for_status(response)
-        repos = _parse_json_list(response)
+        repos: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            response = self._request(
+                "GET", f"/users/{username}/repos", params={**params, "page": str(page)}
+            )
+            _raise_for_status(response)
+            batch = _parse_json_list(response)
+            repos.extend(batch)
+            if len(batch) < per_page:
+                break
+            page += 1
         logger.info("Fetched %d repos for %s", len(repos), username)
         return repos
 
@@ -427,6 +442,13 @@ class GitHubClient:
                         "GitHub rate limit exceeded and reset is beyond "
                         f"{self._rate_limit_max_wait:.0f}s; try again later",
                     )
+                if attempt >= self._max_retries:
+                    # Previously the loop fell through to AssertionError
+                    # here; a persistent rate limit is a typed error.
+                    raise GitHubRateLimitError.from_response(
+                        response,
+                        f"GitHub rate limit persisted after {self._max_retries + 1} attempts",
+                    )
                 logger.warning("GitHub rate limit hit; waiting %.0fs before retry", wait)
                 self._sleep(wait)
                 continue
@@ -460,6 +482,9 @@ class GitHubClient:
         Returns None when the required wait exceeds the configured cap, so
         the caller raises instead of sleeping indefinitely.
         """
+        if self._rate_limit_max_wait <= 0:
+            return None
+
         retry_after = response.headers.get("retry-after")
         if retry_after is not None:
             try:

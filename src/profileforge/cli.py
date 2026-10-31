@@ -24,7 +24,7 @@ from profileforge.profile.sparkline import (
     sparkline_start,
 )
 from profileforge.profile.stats import fetch_code_share, fetch_repo_summaries
-from profileforge.readme.updater import MarkerNotFoundError, update_section
+from profileforge.readme.updater import MarkerNotFoundError, SectionUpdate, update_section
 from profileforge.site.builder import build_site
 from profileforge.site.data import assemble_site_data
 
@@ -66,6 +66,25 @@ def _require_token(settings: Settings, command: str) -> None:
         raise typer.Exit(code=2)
 
 
+def _update_section_or_exit(
+    target: Path,
+    lines: list[str],
+    section: str,
+    *,
+    dry_run: bool,
+    bullets: bool = True,
+) -> SectionUpdate:
+    """Apply a marker-section update, mapping file errors to exit 1."""
+    try:
+        return update_section(target, lines, section=section, dry_run=dry_run, bullets=bullets)
+    except FileNotFoundError as exc:
+        logger.error("%s", exc)
+        raise typer.Exit(code=1) from exc
+    except MarkerNotFoundError as exc:
+        logger.error("%s", exc)
+        raise typer.Exit(code=1) from exc
+
+
 @app.command("version")
 def version() -> None:
     """Print the installed profileforge version."""
@@ -76,7 +95,7 @@ def version() -> None:
 def config_show() -> None:
     """Validate settings and print the effective configuration (secrets masked)."""
     settings = _load_settings()
-    setup_logging(settings.log_level, json_output=settings.log_json)
+    setup_logging(settings.log_level, json_output=settings.log_json, force=True)
     for key, value in settings.masked_dump().items():
         typer.echo(f"{key}={value}")
 
@@ -96,7 +115,7 @@ def sync_activity(
 ) -> None:
     """Fetch recent public GitHub activity into the README's activity section."""
     settings = _load_settings()
-    setup_logging(settings.log_level, json_output=settings.log_json)
+    setup_logging(settings.log_level, json_output=settings.log_json, force=True)
 
     effective_username = username or settings.gh_username
     target_file = target if target is not None else settings.target_file
@@ -121,14 +140,7 @@ def sync_activity(
         typer.echo(message)
         return
 
-    try:
-        result = update_section(target_file, lines, section="activity", dry_run=dry_run)
-    except FileNotFoundError as exc:
-        logger.error("%s", exc)
-        raise typer.Exit(code=1) from exc
-    except MarkerNotFoundError as exc:
-        logger.error("%s", exc)
-        raise typer.Exit(code=1) from exc
+    result = _update_section_or_exit(target_file, lines, "activity", dry_run=dry_run)
 
     if dry_run:
         typer.echo(f"Would update {target_file} with {result.line_count} line(s):")
@@ -163,7 +175,7 @@ def export_docs(
 ) -> None:
     """Export Python sources to Markdown documentation."""
     settings = _load_settings()
-    setup_logging(settings.log_level, json_output=settings.log_json)
+    setup_logging(settings.log_level, json_output=settings.log_json, force=True)
     try:
         result = export_project(
             src,
@@ -182,15 +194,18 @@ def sync_stats(
     target: Path | None = typer.Option(
         None, "--target", help="README to update (default: TARGET_FILE)."
     ),
-    sparkline_days: int = typer.Option(
-        30, "--sparkline-days", help="Trailing days covered by the sparkline."
+    sparkline_days: int | None = typer.Option(
+        None,
+        "--sparkline-days",
+        help="Trailing days in the sparkline (default: SPARKLINE_DAYS).",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without writing."),
 ) -> None:
     """Refresh the README's stats section (plain-text code share + sparkline)."""
     settings = _load_settings()
-    setup_logging(settings.log_level, json_output=settings.log_json)
-    if sparkline_days < 1:
+    setup_logging(settings.log_level, json_output=settings.log_json, force=True)
+    days = sparkline_days if sparkline_days is not None else settings.sparkline_days
+    if days < 1:
         typer.echo("error: --sparkline-days must be positive", err=True)
         raise typer.Exit(code=2)
     _require_token(settings, "sync-stats")
@@ -207,22 +222,11 @@ def sync_stats(
         raise typer.Exit(code=1) from exc
 
     events = [parse_event(raw) for raw in raw_events]
-    start = sparkline_start(sparkline_days, now=moment)
-    sparkline_text = render_sparkline_text(
-        build_daily_counts(events, sparkline_days, now=moment), start
-    )
+    start = sparkline_start(days, now=moment)
+    sparkline_text = render_sparkline_text(build_daily_counts(events, days, now=moment), start)
     body = render_stats_body(share, sparkline_text, moment.strftime("%b %d, %Y"))
 
-    try:
-        result = update_section(
-            target_file, [body], section="stats", dry_run=dry_run, bullets=False
-        )
-    except FileNotFoundError as exc:
-        logger.error("%s", exc)
-        raise typer.Exit(code=1) from exc
-    except MarkerNotFoundError as exc:
-        logger.error("%s", exc)
-        raise typer.Exit(code=1) from exc
+    result = _update_section_or_exit(target_file, [body], "stats", dry_run=dry_run, bullets=False)
 
     if dry_run and result.changed:
         typer.echo(f"Would update stats section in {target_file}.")
@@ -240,14 +244,17 @@ def render_readme_cmd(
     max_lines: int | None = typer.Option(
         None, "--max-lines", help="Max activity lines (default: MAX_LINES)."
     ),
-    sparkline_days: int = typer.Option(
-        30, "--sparkline-days", help="Trailing days covered by the sparkline."
+    sparkline_days: int | None = typer.Option(
+        None,
+        "--sparkline-days",
+        help="Trailing days in the sparkline (default: SPARKLINE_DAYS).",
     ),
 ) -> None:
     """Render the Jinja2 profile README template with live GitHub data."""
     settings = _load_settings()
-    setup_logging(settings.log_level, json_output=settings.log_json)
-    if sparkline_days < 1:
+    setup_logging(settings.log_level, json_output=settings.log_json, force=True)
+    days = sparkline_days if sparkline_days is not None else settings.sparkline_days
+    if days < 1:
         typer.echo("error: --sparkline-days must be positive", err=True)
         raise typer.Exit(code=2)
     _require_token(settings, "render-readme")
@@ -258,7 +265,7 @@ def render_readme_cmd(
                 client,
                 settings.gh_username,
                 max_lines=max_lines if max_lines is not None else settings.max_lines,
-                sparkline_days=sparkline_days,
+                sparkline_days=days,
             )
     except GitHubAPIError as exc:
         logger.error("Failed to fetch GitHub data: %s", exc)
@@ -281,17 +288,20 @@ def build_page(
     max_lines: int | None = typer.Option(
         None, "--max-lines", help="Max activity lines (default: MAX_LINES)."
     ),
-    sparkline_days: int = typer.Option(
-        30, "--sparkline-days", help="Trailing days covered by the sparkline."
+    sparkline_days: int | None = typer.Option(
+        None,
+        "--sparkline-days",
+        help="Trailing days in the sparkline (default: SPARKLINE_DAYS).",
     ),
 ) -> None:
     """Build the static portfolio site (index.html, profile.json, badges)."""
     settings = _load_settings()
-    setup_logging(settings.log_level, json_output=settings.log_json)
+    setup_logging(settings.log_level, json_output=settings.log_json, force=True)
     if projects < 1:
         typer.echo("error: --projects must be positive", err=True)
         raise typer.Exit(code=2)
-    if sparkline_days < 1:
+    days = sparkline_days if sparkline_days is not None else settings.sparkline_days
+    if days < 1:
         typer.echo("error: --sparkline-days must be positive", err=True)
         raise typer.Exit(code=2)
 
@@ -301,7 +311,7 @@ def build_page(
                 client,
                 settings.gh_username,
                 max_lines=max_lines if max_lines is not None else settings.max_lines,
-                sparkline_days=sparkline_days,
+                sparkline_days=days,
                 projects_limit=projects,
             )
     except GitHubAPIError as exc:

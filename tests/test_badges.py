@@ -17,6 +17,8 @@ from profileforge.site.badges import format_compact, render_badge
         (22881, "22.9k"),
         (1_000_000, "1M"),
         (2_500_000, "2.5M"),
+        (999_950, "1M"),
+        (999_999, "1M"),
     ],
 )
 def test_format_compact(value: int, expected: str) -> None:

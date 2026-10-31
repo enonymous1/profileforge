@@ -135,6 +135,15 @@ def test_render_code_section() -> None:
     )
 
 
+def test_render_code_section_with_backticks_uses_longer_fence() -> None:
+    """Source containing triple backticks must not close the fence early."""
+    code = '"""Example:\n\n```python\nX = 1\n```\n"""\n'
+    rendered = render_code_section("doc.py", code)
+    assert rendered.startswith("## `📄 doc.py`\n\n````python\n")
+    assert rendered.endswith("````\n\n---\n")
+    assert "```python\nX = 1\n```" in rendered
+
+
 def test_render_rollup_document() -> None:
     sections = [render_code_section("a.py", "A = 1\n"), render_code_section("b.py", "B = 2\n")]
     assert render_rollup_document("pkg", "pkg", sections) == (
@@ -196,6 +205,21 @@ def test_export_rollup_layout(tmp_path: Path) -> None:
     pkg_doc = (dest / "pkg.md").read_text(encoding="utf-8")
     assert "broken.py" not in pkg_doc
     assert "core.py" in pkg_doc
+
+
+def test_export_rollup_skips_directory_with_only_unreadable_files(tmp_path: Path) -> None:
+    """A directory whose files all fail to read gets no (empty) document."""
+    src = tmp_path / "demo_proj"
+    (src / "good").mkdir(parents=True)
+    (src / "good" / "ok.py").write_text("X = 1\n", encoding="utf-8")
+    (src / "only_bad").mkdir(parents=True)
+    (src / "only_bad" / "broken.py").write_bytes(b"\xff\xfe not utf-8 \x00")
+    dest = tmp_path / "out"
+    result = export_project(src, dest, excluded_dirs=set(_legacy.EXCLUDED_DIRS))
+    produced = {p.relative_to(dest).as_posix() for p in dest.rglob("*.md")}
+    assert "only_bad.md" not in produced
+    assert "good.md" in produced
+    assert result.files_written == len(produced)
 
 
 def test_export_mirrored_layout(tmp_path: Path) -> None:

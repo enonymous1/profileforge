@@ -89,11 +89,11 @@ def export_project(
 
 
 def _read_source(path: Path) -> str | None:
-    """Read a Python source file; None (plus an error log) on decode failure."""
+    """Read a Python source file; None (plus an error log) if unreadable."""
     try:
         return path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        logger.error("Skipping %s: not valid UTF-8", path.name)
+    except (UnicodeDecodeError, OSError) as exc:
+        logger.error("Skipping %s: %s", path.name, exc)
         return None
 
 
@@ -118,6 +118,10 @@ def _export_rollup(scan: ScanResult, dest: Path) -> int:
                 continue
             sections.append(render_code_section(py_file.name, code))
 
+        if not sections:
+            # Every file in this directory was unreadable; do not write an
+            # empty document for it.
+            continue
         md_file.parent.mkdir(parents=True, exist_ok=True)
         md_file.write_text(
             render_rollup_document(directory.name, str(rel_dir), sections),

@@ -4,17 +4,27 @@ on:
   push:
     branches: ["main"]
   pull_request:
+  # Weekly run catches dependency drift between pushes: Dependabot can
+  # propose a breaking update on Monday and nothing would test it until
+  # the next push otherwise.
+  schedule:
+    - cron: "0 9 * * 1"
 
 jobs:
   quality:
     runs-on: ubuntu-latest
+    strategy:
+      # The supported floor is >=3.11; test it, don't just declare it.
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
+          cache: pip
 
       - name: Install dependencies
         run: pip install -e ".[dev]"

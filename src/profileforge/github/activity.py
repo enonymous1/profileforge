@@ -76,7 +76,12 @@ def build_activity_lines(
 
 
 def _collapse_pushes(events: list[GitHubEvent]) -> list[GitHubEvent]:
-    """Keep only the newest push per repo+branch; other events pass through."""
+    """Keep only the newest push per repo+branch; other events pass through.
+
+    Callers must pass events newest-first (the public events API returns
+    them that way); the first push seen per repo+branch wins. Passing
+    unsorted events silently changes which push survives.
+    """
     collapsed: list[GitHubEvent] = []
     seen_push_keys: set[str] = set()
     for event in events:

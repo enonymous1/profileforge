@@ -8,11 +8,19 @@ at startup and pass the resulting object around.
 from __future__ import annotations
 
 import json
-from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any
 
-from pydantic import AliasChoices, Field, PositiveFloat, PositiveInt, SecretStr, field_validator
+from pydantic import (
+    AliasChoices,
+    Field,
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+    SecretStr,
+    field_validator,
+)
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 _DEFAULT_EXCLUDED_DIRS: tuple[str, ...] = (
@@ -65,6 +73,9 @@ class Settings(BaseSettings):
     max_lines: PositiveInt = Field(
         default=5, description="Max activity lines written to the README."
     )
+    sparkline_days: PositiveInt = Field(
+        default=30, description="Trailing days covered by the activity sparkline."
+    )
     events_per_page: PositiveInt = Field(
         default=50, description="Events requested per GitHub API page."
     )
@@ -76,9 +87,14 @@ class Settings(BaseSettings):
     request_timeout: PositiveFloat = Field(
         default=15.0, description="Per-request timeout in seconds."
     )
-    max_retries: PositiveInt = Field(default=3, description="Retries per request before giving up.")
-    rate_limit_max_wait: PositiveFloat = Field(
-        default=300.0, description="Longest to wait out a GitHub rate limit before failing."
+    max_retries: NonNegativeInt = Field(
+        default=3, description="Retries per request before giving up (0 = no retries)."
+    )
+    rate_limit_max_wait: NonNegativeFloat = Field(
+        default=300.0,
+        description=(
+            "Longest to wait out a GitHub rate limit before failing (0 = fail immediately)."
+        ),
     )
 
     # --- Markdown exporter -------------------------------------------------
@@ -134,6 +150,7 @@ class Settings(BaseSettings):
     @field_validator("api_base_url")
     @classmethod
     def _strip_trailing_slash(cls, value: str) -> str:
+        """Drop a trailing slash so URL joining never produces a double slash."""
         return value.rstrip("/")
 
     @field_validator("log_level")
@@ -152,7 +169,11 @@ class Settings(BaseSettings):
         return data
 
 
-@lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Load (once) and return the validated application settings."""
+    """Load and return the validated application settings.
+
+    Deliberately uncached: construction is a cheap dict parse, and a cache
+    would silently ignore environment changes after the first call (a trap
+    for library users and for tests).
+    """
     return Settings()

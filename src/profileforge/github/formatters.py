@@ -21,21 +21,6 @@ from profileforge.github.models import (
     ReleasePayload,
 )
 
-EVENT_ICONS: dict[str, str] = {
-    "PushEvent": "📦",
-    "CreateEvent": "🌱",
-    "ForkEvent": "🍴",
-    "WatchEvent": "⭐",
-    "IssuesEvent": "🐛",
-    "IssueCommentEvent": "💬",
-    "PullRequestEvent": "🔀",
-    "ReleaseEvent": "🚀",
-    "DeleteEvent": "🗑️",
-    "PublicEvent": "📢",
-}
-
-DEFAULT_ICON = "🔧"
-
 Formatter = Callable[[GitHubEvent], str]
 
 _P = TypeVar("_P")
@@ -50,6 +35,16 @@ def _payload(event: GitHubEvent, kind: type[_P]) -> _P:
             f"{type(payload).__name__}, expected {kind.__name__}"
         )
     return payload
+
+
+def _md_text(text: str) -> str:
+    """Escape Markdown link-breaking characters in user-supplied text.
+
+    Issue/PR titles are free text from any GitHub user. Without escaping,
+    a title like ``click [here](https://evil.example)`` renders as a live
+    link in the profile README.
+    """
+    return text.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
 
 
 def _format_push(event: GitHubEvent) -> str:
@@ -69,7 +64,7 @@ def _format_create(event: GitHubEvent) -> str:
     if payload.ref_type == "repository":
         return f"🌱 Created repository [`{event.repo_name}`]({event.repo_url}) — {event.date_str}"
     return (
-        f"🌱 Created {payload.ref_type} `{payload.ref}` in "
+        f"🌱 Created {payload.ref_type} `{_md_text(payload.ref)}` in "
         f"[`{event.repo_name}`]({event.repo_url}) — {event.date_str}"
     )
 
@@ -85,7 +80,7 @@ def _format_fork(event: GitHubEvent) -> str:
 def _format_issues(event: GitHubEvent) -> str:
     payload = _payload(event, IssuePayload)
     return (
-        f"🐛 {payload.action.capitalize()} issue [{payload.title}]({payload.url}) "
+        f"🐛 {payload.action.capitalize()} issue [{_md_text(payload.title)}]({payload.url}) "
         f"in [`{event.repo_name}`]({event.repo_url}) — {event.date_str}"
     )
 
@@ -93,7 +88,7 @@ def _format_issues(event: GitHubEvent) -> str:
 def _format_issue_comment(event: GitHubEvent) -> str:
     payload = _payload(event, IssueCommentPayload)
     return (
-        f"💬 Commented on [{payload.title}]({payload.url}) "
+        f"💬 Commented on [{_md_text(payload.title)}]({payload.url}) "
         f"in [`{event.repo_name}`]({event.repo_url}) — {event.date_str}"
     )
 
@@ -101,7 +96,7 @@ def _format_issue_comment(event: GitHubEvent) -> str:
 def _format_pull_request(event: GitHubEvent) -> str:
     payload = _payload(event, PullRequestPayload)
     return (
-        f"🔀 {payload.action.capitalize()} PR [{payload.title}]({payload.url}) "
+        f"🔀 {payload.action.capitalize()} PR [{_md_text(payload.title)}]({payload.url}) "
         f"in [`{event.repo_name}`]({event.repo_url}) — {event.date_str}"
     )
 

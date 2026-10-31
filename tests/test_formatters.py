@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 from profileforge.github.formatters import (
@@ -86,6 +88,17 @@ def test_format_fork() -> None:
 def test_format_issues() -> None:
     assert (
         format_event(parse_event(RAW_ISSUES)) == "🐛 Opened issue [Bug report]"
+        "(https://github.com/octocat/hello-world/issues/1) in "
+        "[`octocat/hello-world`](https://github.com/octocat/hello-world) — Oct 03, 2026"
+    )
+
+
+def test_format_issues_escapes_markdown_in_title() -> None:
+    """A title containing a Markdown link must not inject a live link."""
+    raw = copy.deepcopy(RAW_ISSUES)
+    raw["payload"]["issue"]["title"] = "click [here](https://evil.example)"
+    assert (
+        format_event(parse_event(raw)) == "🐛 Opened issue [click \\[here\\](https://evil.example)]"
         "(https://github.com/octocat/hello-world/issues/1) in "
         "[`octocat/hello-world`](https://github.com/octocat/hello-world) — Oct 03, 2026"
     )

@@ -7,20 +7,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from profileforge.github.activity import build_activity_lines
 from profileforge.github.client import GitHubClient
-from profileforge.github.models import parse_event
-from profileforge.profile.sparkline import (
-    build_daily_counts,
-    render_sparkline_svg,
-    sparkline_start,
-)
+from profileforge.profile.snapshot import fetch_profile_snapshot
+from profileforge.profile.sparkline import render_sparkline_svg
 from profileforge.profile.stats import (
     LanguageStat,
     RepoSummary,
     UserSummary,
-    fetch_repo_summaries,
-    fetch_user_summary,
     summarize_languages,
     total_stars,
 )
@@ -130,24 +123,21 @@ def assemble_site_data(
 ) -> SiteData:
     """Fetch live data and assemble the site model.
 
-    Shares the same pipeline as the README renderer (user/repo summaries,
-    language stats, activity lines, sparkline), so the page and the profile
-    can never disagree.
+    The fetch pipeline is shared with the README renderer via
+    ``fetch_profile_snapshot``; this function adds only site presentation
+    (project cards, language ranking, activity HTML, SVG sparkline).
     """
-    user = fetch_user_summary(client, username)
-    repos = fetch_repo_summaries(client, username)
-    raw_events = client.fetch_public_events(username, per_page=100, max_pages=3)
-    events = [parse_event(raw) for raw in raw_events]
-    activity_lines = build_activity_lines(raw_events, username=username, max_lines=max_lines)
-    start = sparkline_start(sparkline_days)
+    snapshot = fetch_profile_snapshot(
+        client, username, max_lines=max_lines, sparkline_days=sparkline_days
+    )
     data = SiteData(
-        user=user,
-        total_stars=total_stars(repos),
-        languages=tuple(summarize_languages(repos)),
-        projects=tuple(select_projects(repos, limit=projects_limit)),
-        activity_lines=tuple(activity_lines),
-        activity_html=tuple(markdown_inline_to_html(line) for line in activity_lines),
-        sparkline_svg=render_sparkline_svg(build_daily_counts(events, sparkline_days), start),
+        user=snapshot.user,
+        total_stars=total_stars(snapshot.repos),
+        languages=tuple(summarize_languages(snapshot.repos)),
+        projects=tuple(select_projects(snapshot.repos, limit=projects_limit)),
+        activity_lines=snapshot.activity_lines,
+        activity_html=tuple(markdown_inline_to_html(line) for line in snapshot.activity_lines),
+        sparkline_svg=render_sparkline_svg(snapshot.daily_counts, snapshot.window_start),
         sparkline_days=sparkline_days,
         generated_at=datetime.now(UTC).strftime("%Y-%m-%d %H:%M"),
     )

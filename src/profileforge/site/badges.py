@@ -16,9 +16,14 @@ def format_compact(value: int) -> str:
         raise ValueError("value must be non-negative")
     if value < 1000:
         return str(value)
-    divisor, suffix = (1000.0, "k") if value < 1_000_000 else (1_000_000.0, "M")
-    text = f"{value / divisor:.1f}".rstrip("0").rstrip(".")
-    return f"{text}{suffix}"
+    if value < 1_000_000:
+        rounded = round(value / 1000, 1)
+        if rounded >= 1000:  # 999950+ rounds up into the next unit
+            return "1M"
+        text = f"{rounded:.1f}".rstrip("0").rstrip(".")
+        return f"{text}k"
+    text = f"{round(value / 1_000_000, 1):.1f}".rstrip("0").rstrip(".")
+    return f"{text}M"
 
 
 def _text_width(text: str) -> float:

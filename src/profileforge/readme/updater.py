@@ -51,7 +51,8 @@ def build_section_body(
 ) -> str:
     """Render a marker section body, byte-compatible with the legacy updater.
 
-    With ``bullets=False`` lines are written as-is (for HTML/SVG sections).
+    With ``bullets=False`` lines are written as-is (for pre-rendered bodies
+    such as the stats section's fenced code blocks).
     """
     start_marker, end_marker = markers(section)
     body = start_marker + "\n"

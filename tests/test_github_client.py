@@ -205,6 +205,24 @@ def test_rate_limit_reset_beyond_cap_raises() -> None:
     assert api.sleeps == []
 
 
+def test_rate_limit_zero_max_wait_fails_immediately() -> None:
+    api = _MockAPI([_json_response(429, {"message": "slow down"}, {"Retry-After": "60"})])
+    with api.client(rate_limit_max_wait=0) as client:
+        with pytest.raises(GitHubRateLimitError):
+            client.fetch_public_events("octocat")
+    assert api.sleeps == []
+    assert len(api.requests) == 1
+
+
+def test_persistent_rate_limit_raises_typed_error() -> None:
+    api = _MockAPI([_json_response(429, None, {"Retry-After": "1"})] * 4)
+    with api.client() as client:
+        with pytest.raises(GitHubRateLimitError, match="persisted"):
+            client.fetch_public_events("octocat")
+    assert api.sleeps == [1.0, 1.0, 1.0]
+    assert len(api.requests) == 4
+
+
 def test_etag_304_returns_cached_body() -> None:
     api = _MockAPI(
         [
@@ -422,6 +440,20 @@ def test_fetch_repos() -> None:
     assert request.url.path == "/users/octocat/repos"
     assert request.url.params["per_page"] == "100"
     assert request.url.params["sort"] == "updated"
+
+
+def test_fetch_repos_paginates() -> None:
+    api = _MockAPI(
+        [
+            _json_response(200, [{"name": "a"}, {"name": "b"}]),
+            _json_response(200, [{"name": "c"}]),
+        ]
+    )
+    with api.client() as client:
+        repos = client.fetch_repos("octocat", per_page=2)
+    assert [repo["name"] for repo in repos] == ["a", "b", "c"]
+    assert api.requests[0].url.params["page"] == "1"
+    assert api.requests[1].url.params["page"] == "2"
 
 
 def test_fetch_repos_blank_username_rejected() -> None:

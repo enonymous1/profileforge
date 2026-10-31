@@ -63,6 +63,20 @@ def test_build_site(tmp_path: Path) -> None:
         assert (tmp_path / "dist" / name).exists()
 
 
+def test_build_site_rebuild_replaces_stale_files(tmp_path: Path) -> None:
+    """Rebuilding over an existing site drops files the new build lacks."""
+    out = tmp_path / "dist"
+    build_site(_data(), out)
+    (out / "stale.html").write_text("old", encoding="utf-8")
+    (out / "badges" / "stale.svg").write_text("old", encoding="utf-8")
+    build_site(_data(), out)
+    assert not (out / "stale.html").exists()
+    assert not (out / "badges" / "stale.svg").exists()
+    assert (out / "index.html").exists()
+    # No staging or backup debris left beside the output dir.
+    assert [p.name for p in tmp_path.iterdir()] == ["dist"]
+
+
 def test_index_html_content(tmp_path: Path) -> None:
     build_site(_data(), tmp_path / "dist")
     page = (tmp_path / "dist" / "index.html").read_text(encoding="utf-8")

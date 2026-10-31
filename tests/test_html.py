@@ -43,3 +43,19 @@ def test_url_is_escaped() -> None:
 
 def test_unmatched_brackets_stay_literal() -> None:
     assert markdown_inline_to_html("[not a link") == "[not a link"
+
+
+def test_escaped_brackets_stay_literal() -> None:
+    """An escaped span stays visible text, even inside a real link.
+
+    The formatters escape a hostile title as ``[click \\[here\\](evil)](real)``;
+    the converter must render the evil URL as text inside the real link,
+    never as a link of its own.
+    """
+    html = markdown_inline_to_html(
+        r"Issue [click \[here\](https://evil.example)](https://github.com/o/p/issues/1)"
+    )
+    assert html == (
+        'Issue <a href="https://github.com/o/p/issues/1">'
+        r"click \[here\](https://evil.example)</a>"
+    )

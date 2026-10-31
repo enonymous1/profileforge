@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "profileforge"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Tooling that powers a living GitHub profile: activity sync, doc export, and portfolio site generation."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,6 +32,11 @@ profileforge = "profileforge.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/profileforge"]
+
+# Single source of truth for the version: src/profileforge/__init__.py.
+# (Previously the version also lived in [project], and the two drifted.)
+[tool.hatch.version]
+path = "src/profileforge/__init__.py"
 
 [tool.ruff]
 target-version = "py311"

@@ -10,26 +10,23 @@ from typing import Any
 
 import jinja2
 
-from profileforge.github.activity import build_activity_lines
 from profileforge.github.client import GitHubClient
-from profileforge.github.models import parse_event
-from profileforge.profile.sparkline import (
-    build_daily_counts,
-    render_sparkline_text,
-    sparkline_start,
-)
+from profileforge.profile.snapshot import fetch_profile_snapshot
+from profileforge.profile.sparkline import render_sparkline_text
 from profileforge.profile.stats import (
     CodeShare,
     LanguageBytes,
     LanguageStat,
     fetch_code_share,
-    fetch_repo_summaries,
-    fetch_user_summary,
     total_stars,
 )
 
 logger = logging.getLogger(__name__)
 
+# autoescape is off deliberately: this template renders Markdown, not HTML.
+# GitHub sanitizes the rendered README, and the interpolated values (name,
+# bio, counts) are the user's own profile data. The site templates, which
+# render real HTML, use autoescape=True — keep the two apart.
 _TEMPLATE_ENV = jinja2.Environment(
     loader=jinja2.PackageLoader("profileforge.profile", "templates"),
     autoescape=False,
@@ -108,21 +105,16 @@ def build_profile_context(
 ) -> dict[str, Any]:
     """Fetch live data and assemble the README template context."""
     moment = now or datetime.now(UTC)
-    user = fetch_user_summary(client, username)
-    repos = fetch_repo_summaries(client, username)
-    share = fetch_code_share(client, username, repos)
-    raw_events = client.fetch_public_events(username, per_page=100, max_pages=3)
-    events = [parse_event(raw) for raw in raw_events]
-    start = sparkline_start(sparkline_days, now=moment)
-    sparkline_text = render_sparkline_text(
-        build_daily_counts(events, sparkline_days, now=moment), start
+    snapshot = fetch_profile_snapshot(
+        client, username, max_lines=max_lines, sparkline_days=sparkline_days, now=moment
     )
-    activity_lines = build_activity_lines(raw_events, username=username, max_lines=max_lines)
+    share = fetch_code_share(client, username, list(snapshot.repos))
+    sparkline_text = render_sparkline_text(snapshot.daily_counts, snapshot.window_start)
     context: dict[str, Any] = {
-        "user": user,
-        "total_stars": total_stars(repos),
+        "user": snapshot.user,
+        "total_stars": total_stars(snapshot.repos),
         "code_share": share,
-        "activity_lines": activity_lines,
+        "activity_lines": list(snapshot.activity_lines),
         "sparkline_text": sparkline_text,
         "stats_as_of": moment.strftime("%b %d, %Y"),
         "render_stats_body": render_stats_body,
@@ -132,9 +124,9 @@ def build_profile_context(
     logger.info(
         "Built profile context for %s: %d repos, %d languages, %d activity lines",
         username,
-        len(repos),
+        len(snapshot.repos),
         share.language_count,
-        len(activity_lines),
+        len(snapshot.activity_lines),
     )
     return context
 

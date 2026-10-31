@@ -83,9 +83,12 @@ def test_masked_dump_hides_token(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "super-secret" not in str(dumped)
 
 
-def test_get_settings_caches(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_settings_reads_env_fresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Settings are not cached: an env change after a first load is honored."""
     monkeypatch.setenv("GH_USERNAME", "octocat")
-    assert get_settings() is get_settings()
+    assert get_settings().gh_username == "octocat"
+    monkeypatch.setenv("GH_USERNAME", "other")
+    assert get_settings().gh_username == "other"
 
 
 def test_excluded_dirs_comma_separated_env(monkeypatch: pytest.MonkeyPatch) -> None:
